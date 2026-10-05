@@ -369,6 +369,17 @@ class HoudiniMCP(NetworkInspectMixin, NodeOpsMixin, ParamOpsMixin, ExecOpsMixin,
                 result["_undo_snapshot"] = snapshot  # 供 UI 撤销使用，不会发给 AI
         return result
 
+    def _tool_set_parameter_expression(self, args: Dict[str, Any]) -> Dict[str, Any]:
+        missing = [name for name in ("node_path", "param_name", "expression") if name not in args]
+        if missing:
+            return {"success": False, "error": f"缺少必要参数: {', '.join(missing)}"}
+        ok, msg, snapshot = self.set_parameter_expression(
+            args["node_path"], args["param_name"], args["expression"], args.get("language", "Hscript"))
+        result = {"success": ok, "result": msg if ok else "", "error": "" if ok else msg}
+        if ok and snapshot:
+            result["_undo_snapshot"] = snapshot
+        return result
+
     def _tool_create_node(self, args: Dict[str, Any]) -> Dict[str, Any]:
         node_type = args.get("node_type", "")
         if not node_type:
@@ -1149,6 +1160,7 @@ class HoudiniMCP(NetworkInspectMixin, NodeOpsMixin, ParamOpsMixin, ExecOpsMixin,
         "get_network_structure": 'get_network_structure(network_path="/obj/geo1", page=1)',
         "get_node_parameters": 'get_node_parameters(node_path="/obj/geo1/box1", page=1)',
         "set_node_parameter": 'set_node_parameter(node_path="/obj/geo1/box1", param_name="sizex", value=2.0)',
+        "set_parameter_expression": 'set_parameter_expression(node_path="/obj/geo1/box1", param_name="sizex", expression="$F", language="Hscript")',
         "create_node": 'create_node(parent_path="/obj/geo1", node_type="box", node_name="box1")',
         "create_nodes_batch": 'create_nodes_batch(parent_path="/obj/geo1", nodes=[{"type":"box","name":"box1"},...])',
         "create_wrangle_node": 'create_wrangle_node(parent_path="/obj/geo1", code="@P.y += 1;", name="my_wrangle")',
@@ -1190,6 +1202,7 @@ class HoudiniMCP(NetworkInspectMixin, NodeOpsMixin, ParamOpsMixin, ExecOpsMixin,
         "get_network_structure": "_tool_get_network_structure",
         "get_node_parameters": "_tool_get_node_parameters",
         "set_node_parameter": "_tool_set_node_parameter",
+        "set_parameter_expression": "_tool_set_parameter_expression",
         "create_node": "_tool_create_node",
         "create_nodes_batch": "_tool_create_nodes_batch",
         "connect_nodes": "_tool_connect_nodes",
@@ -1255,6 +1268,7 @@ class HoudiniMCP(NetworkInspectMixin, NodeOpsMixin, ParamOpsMixin, ExecOpsMixin,
         'create_nodes_batch',
         'create_wrangle_node',
         'set_node_parameter',
+        'set_parameter_expression',
         'batch_set_parameters',
         'connect_nodes',
     })

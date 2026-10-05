@@ -10,6 +10,7 @@ import traceback
 from pathlib import Path
 
 from .client import DEFAULT_HOST, DEFAULT_PORT, port_file
+from houdini_agent.utils.safe_expr import set_expression_safe
 
 _SERVER = None
 _THREAD = None
@@ -106,7 +107,7 @@ def _scene_context():
 
 _MUTATING = {
     "create_node", "create_nodes_batch", "create_wrangle_node", "delete_node",
-    "set_node_parameter", "batch_set_parameters", "connect_nodes", "copy_node",
+    "set_node_parameter", "set_parameter_expression", "batch_set_parameters", "connect_nodes", "copy_node",
     "set_display_flag", "execute_python", "run_skill",
     "import_3d_asset",  # Meshy 导入会建节点
 }
@@ -159,7 +160,7 @@ def _execute_tool(payload):
     def run():
         import hou
         use_group = name in _MUTATING
-        should_snap = name in _MUTATING and name not in ("save_hip", "set_node_parameter")
+        should_snap = name in _MUTATING and name not in ("save_hip", "set_node_parameter", "set_parameter_expression")
         target = _target_network(args) if should_snap else None
         before = _snapshot_children(target) if should_snap else {}
         grouped = False
@@ -222,8 +223,17 @@ def _undo_node_op(ctx):
                                 lang = (hou.exprLanguage.Python
                                         if "python" in str(old.get("lang", "")).lower()
                                         else hou.exprLanguage.Hscript)
-                                pm.setExpression(old["expr"], lang)
+                                if lang == hou.exprLanguage.Hscript:
+                                    ok, message = set_expression_safe(pm, old["expr"])
+                                    if not ok:
+                                        raise RuntimeError(message)
+                                else:
+                                    # Python 表达式手动撤销：保留原调用，GUI 崩溃风险已知。
+                                    # 见 Doc/known_issues/2026-10-03-setexpression-segfault.md。
+                                    pm.setExpression(old["expr"], lang)
                             else:
+                                if snap.get("clear_keyframes"):
+                                    pm.deleteAllKeyframes()
                                 pm.set(old)
             elif op == "delete":
                 hou.undos.performUndo()

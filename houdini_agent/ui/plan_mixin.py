@@ -317,5 +317,5 @@ class PlanMixin:
     # 已自带 checkpoint 追踪的工具（在 _on_add_node_operation 中有专用分支）
     _SELF_TRACKING_TOOLS = frozenset({
         'create_node', 'create_nodes_batch', 'create_wrangle_node',
-        'delete_node', 'set_node_parameter',
+        'delete_node', 'set_node_parameter', 'set_parameter_expression',
     })

@@ -29,7 +29,7 @@ class AIClientAgentMixin:
     })
     _OP_TOOLS = frozenset({
         'create_node', 'create_nodes_batch', 'connect_nodes',
-        'set_node_parameter', 'create_wrangle_node',
+        'set_node_parameter', 'set_parameter_expression', 'create_wrangle_node',
     })
     _FAILED_TOOL_REPEAT_LIMIT = 2
     # 防轮询风暴：连续这么多次用完全相同参数调用同一工具后，复用"重复失败保护"硬性拦截。

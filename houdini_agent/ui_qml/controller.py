@@ -25,6 +25,8 @@ import time
 import uuid
 from pathlib import Path
 
+from houdini_agent.utils.safe_expr import set_expression_safe
+
 try:
     from PySide6.QtCore import (
         QAbstractListModel, QModelIndex, QObject, Qt, Signal, Slot, Property, QTimer, QSettings
@@ -124,7 +126,7 @@ except Exception:
 # tools that require user approval when confirm mode is on
 # （repair_houdini_connection 可能启动 Houdini 进程，确认模式下应征得同意）
 CONFIRM_TOOLS = {"create_node", "create_nodes_batch", "create_wrangle_node", "delete_node",
-                 "set_node_parameter", "batch_set_parameters", "connect_nodes", "copy_node",
+                 "set_node_parameter", "set_parameter_expression", "batch_set_parameters", "connect_nodes", "copy_node",
                  "execute_python", "execute_shell", "save_hip", "run_skill",
                  "repair_houdini_connection"}
 
@@ -3692,12 +3694,12 @@ class Controller(QObject):
 
     # tools that mutate the scene (need an undo group + node-change snapshot)
     _MUTATING = {"create_node", "create_nodes_batch", "create_wrangle_node", "delete_node",
-                 "set_node_parameter", "connect_nodes", "copy_node", "batch_set_parameters",
+                 "set_node_parameter", "set_parameter_expression", "connect_nodes", "copy_node", "batch_set_parameters",
                  "set_display_flag", "execute_python", "run_skill"}
     _MUTATING = _MUTATING | MESHY_MUTATING   # + import_3d_asset（导入会建节点）
     # tools that can trigger a scene cook (measure + report timing)
     _COOK_TRIGGERING = {"create_node", "create_nodes_batch", "create_wrangle_node",
-                        "connect_nodes", "set_display_flag", "set_node_parameter",
+                        "connect_nodes", "set_display_flag", "set_node_parameter", "set_parameter_expression",
                         "batch_set_parameters", "execute_python", "run_skill"}
 
     @Slot(str, str)
@@ -3714,8 +3716,8 @@ class Controller(QObject):
 
         result = {"success": False, "error": "unknown"}
         use_grp = name in self._MUTATING
-        # set_node_parameter changes no nodes (uses _undo_snapshot instead)
-        should_snap = name in self._MUTATING and name not in ("save_hip", "set_node_parameter")
+        # Parameter tools change no nodes (use _undo_snapshot instead)
+        should_snap = name in self._MUTATING and name not in ("save_hip", "set_node_parameter", "set_parameter_expression")
         try:
             import hou
         except Exception:
@@ -3891,7 +3893,7 @@ class Controller(QObject):
                 ops.append({"op": "create", "paths": cre})
             if dele:
                 ops.append({"op": "delete", "paths": dele})
-        if name == "set_node_parameter":
+        if name in ("set_node_parameter", "set_parameter_expression"):
             snap = r.get("_undo_snapshot")
             if isinstance(snap, dict) and snap.get("node_path"):
                 ops.append({"op": "modify", "paths": [snap["node_path"]], "snapshot": snap})
@@ -4622,8 +4624,17 @@ class Controller(QObject):
                                 lang = (hou.exprLanguage.Python
                                         if "python" in str(old.get("lang", "")).lower()
                                         else hou.exprLanguage.Hscript)
-                                pm.setExpression(old["expr"], lang)
+                                if lang == hou.exprLanguage.Hscript:
+                                    ok, message = set_expression_safe(pm, old["expr"])
+                                    if not ok:
+                                        raise RuntimeError(message)
+                                else:
+                                    # Python 表达式手动撤销：保留原调用，GUI 崩溃风险已知。
+                                    # 见 Doc/known_issues/2026-10-03-setexpression-segfault.md。
+                                    pm.setExpression(old["expr"], lang)
                             else:
+                                if snap.get("clear_keyframes"):
+                                    pm.deleteAllKeyframes()
                                 pm.set(old)
             elif op == "delete":
                 hou.undos.performUndo()

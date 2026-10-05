@@ -129,7 +129,7 @@ HOUDINI_TOOLS = [
         "type": "function",
         "function": {
             "name": "set_node_parameter",
-            "description": "设置节点参数值。注意：调用前必须先用 get_node_parameters 确认参数名和类型，不要猜测参数名。",
+            "description": "设置普通节点参数值；通道表达式使用 set_parameter_expression。调用前用 get_node_parameters 确认参数名和类型。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -142,6 +142,23 @@ HOUDINI_TOOLS = [
                     }
                 },
                 "required": ["node_path", "param_name", "value"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_parameter_expression",
+            "description": "设置单个数值参数的 Hscript 通道表达式，使用安全通道命令并提供撤销快照。普通参数值用 set_node_parameter；Python 表达式暂不支持。不覆盖多关键帧动画或非零时间关键帧。设置前用 get_node_parameters 确认参数名。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "node_path": {"type": "string", "description": "节点绝对路径"},
+                    "param_name": {"type": "string", "description": "单个 Float/Int 参数名，元组请指定分量"},
+                    "expression": {"type": "string", "description": "Hscript 表达式，如 ch(\"../ref/tx\") + 1；不支持单引号"},
+                    "language": {"type": "string", "enum": ["Hscript"], "default": "Hscript"}
+                },
+                "required": ["node_path", "param_name", "expression"]
             }
         }
     },

@@ -27,6 +27,7 @@ class AgentRunnerMixin:
         # 删除 / 修改
         'delete_node',
         'set_node_parameter',
+        'set_parameter_expression',
         'batch_set_parameters',
         'connect_nodes',
         'copy_node',

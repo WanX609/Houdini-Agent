@@ -38,6 +38,7 @@ from houdini_agent.qt_compat import QtWidgets, QtCore, QtGui, QSettings, invoke_
 from .i18n import tr, get_language
 from ..utils.ai_client import AIClient, HOUDINI_TOOLS
 from ..utils.mcp import HoudiniMCP
+from ..utils.safe_expr import set_expression_safe
 from ..utils.token_optimizer import TokenOptimizer, TokenBudget, CompressionStrategy
 from ..utils.ultra_optimizer import UltraOptimizer
 from .theme_engine import ThemeEngine
@@ -1227,7 +1228,7 @@ class AITab(
     # 这些工具执行时可能导致耗时的场景计算，需要特殊保护
     _COOK_TRIGGERING_TOOLS = frozenset({
         'create_node', 'create_nodes_batch', 'create_wrangle_node',
-        'connect_nodes', 'set_display_flag', 'set_node_parameter',
+        'connect_nodes', 'set_display_flag', 'set_node_parameter', 'set_parameter_expression',
         'batch_set_parameters', 'execute_python', 'run_skill',
     })
 
@@ -1247,7 +1248,7 @@ class AITab(
     # 所有注册的工具名称（用于检测伪造）
     _ALL_TOOL_NAMES = (
         'create_wrangle_node|get_network_structure'
-        '|get_node_parameters|set_node_parameter|create_node|create_nodes_batch'
+        '|get_node_parameters|set_node_parameter|set_parameter_expression|create_node|create_nodes_batch'
         '|connect_nodes|delete_node|search_node_types|semantic_search_nodes'
         '|list_children|read_selection|set_display_flag'
         '|copy_node|batch_set_parameters|find_nodes_by_param|save_hip|undo_redo'
@@ -1863,7 +1864,7 @@ class AITab(
                 paths = self._extract_node_paths(result_text, 'delete_node') or ([result_text] if result_text else [])
                 label = NodeOperationLabel('delete', 1, paths) if paths else None
             
-            elif name == 'set_node_parameter':
+            elif name in ('set_node_parameter', 'set_parameter_expression'):
                 op_type = 'modify'
                 # undo_snapshot 包含 node_path, param_name, old_value, new_value
                 # ★ 无 snapshot = 参数值未变化 → 不显示 checkpoint（避免用户困惑）
@@ -2034,7 +2035,15 @@ class AITab(
                     lang = (hou.exprLanguage.Python
                             if "python" in lang_str.lower()
                             else hou.exprLanguage.Hscript)
-                    parm.setExpression(val["expr"], lang)
+                    if lang == hou.exprLanguage.Hscript:
+                        ok, message = set_expression_safe(parm, val["expr"])
+                        if not ok:
+                            logger.warning("恢复表达式失败 %s: %s", parm.path(), message)
+                            continue
+                    else:
+                        # Python 表达式手动恢复：保留原调用，GUI 崩溃风险已知。
+                        # 见 Doc/known_issues/2026-10-03-setexpression-segfault.md。
+                        parm.setExpression(val["expr"], lang)
                 else:
                     parm.set(val)
             except Exception:
@@ -2143,8 +2152,17 @@ class AITab(
                         lang = (hou.exprLanguage.Python
                                 if "python" in lang_str.lower()
                                 else hou.exprLanguage.Hscript)
-                        parm.setExpression(old_value["expr"], lang)
+                        if lang == hou.exprLanguage.Hscript:
+                            ok, message = set_expression_safe(parm, old_value["expr"])
+                            if not ok:
+                                raise RuntimeError(message)
+                        else:
+                            # Python 表达式手动撤销：保留原调用，GUI 崩溃风险已知。
+                            # 见 Doc/known_issues/2026-10-03-setexpression-segfault.md。
+                            parm.setExpression(old_value["expr"], lang)
                     else:
+                        if undo_snapshot.get("clear_keyframes"):
+                            parm.deleteAllKeyframes()
                         parm.set(old_value)
                 
                 self._show_toast(tr('toast.param_restored', param_name))

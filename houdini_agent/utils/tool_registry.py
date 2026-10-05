@@ -317,7 +317,7 @@ class ToolRegistry:
             'connect_nodes', 'copy_node',
         },
         'modify': {
-            'set_node_parameter', 'batch_set_parameters', 'set_display_flag',
+            'set_node_parameter', 'set_parameter_expression', 'batch_set_parameters', 'set_display_flag',
         },
         'code': {
             'execute_python', 'execute_shell',

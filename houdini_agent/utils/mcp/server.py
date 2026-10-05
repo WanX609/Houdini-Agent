@@ -20,6 +20,7 @@ import time
 import uuid
 import re
 from typing import Any, Optional, Callable
+from functools import wraps
 
 try:
 	import hou  # type: ignore
@@ -39,6 +40,7 @@ except Exception:
 from .settings import read_settings
 from .logger import get_logger
 from . import hou_core
+from houdini_agent.utils.safe_expr import SET_EXPRESSION_GUIDANCE, code_uses_set_expression, guard_enabled
 
 log: logging.Logger = get_logger()
 
@@ -103,13 +105,13 @@ def _setup_fastmcp_tools():
 		return payload
 
 	def tool_wrapper(fn: Callable[..., dict]) -> Callable[..., dict]:
+		@wraps(fn)
 		def _wrapped(*args, **kwargs) -> dict:
 			try:
 				return fn(*args, **kwargs)
 			except Exception as e:
 				log.exception("MCP tool error in %s", getattr(fn, "__name__", "<tool>"))
 				return err(f"内部错误：{e}", code="internal_error")
-		_wrapped.__name__ = getattr(fn, "__name__", "wrapped")
 		return _wrapped
 
 	@mcp.tool  # type: ignore[attr-defined]
@@ -264,6 +266,19 @@ def _setup_fastmcp_tools():
 
 	@mcp.tool  # type: ignore[attr-defined]
 	@tool_wrapper
+	def set_parameter_expression(node_path: str, param_name: str, expression: str,
+	                             language: str = "Hscript") -> dict:
+		"""设置数值参数 Hscript 表达式；普通值用 set_node_parameter，Python 表达式暂不支持。"""
+		from .tools.param_ops import ParamOpsMixin
+		success, message, snapshot = ParamOpsMixin().set_parameter_expression(
+			node_path, param_name, expression, language)
+		result = ok(message) if success else err(message)
+		if success and snapshot:
+			result["_undo_snapshot"] = snapshot
+		return result
+
+	@mcp.tool  # type: ignore[attr-defined]
+	@tool_wrapper
 	def get_node_parameters(node_path: str, include_hidden: bool = False) -> dict:
 		if hou is None:
 			return err("Houdini 环境不可用。")
@@ -367,6 +382,8 @@ def _setup_fastmcp_tools():
 	@mcp.tool  # type: ignore[attr-defined]
 	@tool_wrapper
 	def execute_python_code(code: str) -> dict:
+		if guard_enabled() and code_uses_set_expression(code):
+			return err(SET_EXPRESSION_GUIDANCE)
 		import contextlib, io
 		try:
 			if hou is None:
@@ -487,13 +504,13 @@ def _setup_fastmcp_tools():
 				created_connections.append({"from": from_node.path(), "to": to_node.path(), "input_index": input_index})
 			except Exception as conn_error:
 				errors.append(f"建立连接失败: {str(conn_error)}")
-	try:
-		parent.layoutChildren()
-	except Exception:
-		pass
-	# 注意：不再自动猜测连接关系。
-	# 原因：自动连接（如按创建顺序串联、猜测 copytopoints 输入）
-	# 会导致不可预测的结果。连接关系应由调用方通过 connections 配置显式指定。
+		try:
+			parent.layoutChildren()
+		except Exception:
+			pass
+		# 注意：不再自动猜测连接关系。
+		# 原因：自动连接（如按创建顺序串联、猜测 copytopoints 输入）
+		# 会导致不可预测的结果。连接关系应由调用方通过 connections 配置显式指定。
 		success_message = f"成功创建 {len(created_nodes)} 个节点，建立 {len(created_connections)} 个连接"
 		if errors:
 			success_message += f"，但有 {len(errors)} 个错误"

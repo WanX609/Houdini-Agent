@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Optional, Dict, List, Tuple
 
+from houdini_agent.utils.safe_expr import _hscript_escape, set_expression_safe
+
 try:
     import hou  # type: ignore
 except Exception:
@@ -89,6 +91,78 @@ class ParamOpsMixin:
             return True, f"已设置 {node_path} {param_name}: {old_value} → {actual_value}", snapshot
         except Exception as exc:
             return False, f"设置失败: {exc}", None
+
+    def set_parameter_expression(self, node_path: str, param_name: str,
+                                 expression: str, language: str = "Hscript") -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        """设置数值参数的 Hscript 表达式，返回可序列化的撤销快照。
+
+        不覆盖无法用现有快照完整恢复的动画或 Python 表达式。
+        """
+        if hou is None:
+            return False, "未检测到 Houdini API", None
+        if not isinstance(language, str) or language.strip().lower() != "hscript":
+            return False, "仅支持 Hscript 表达式；Python 表达式暂不支持", None
+        if not isinstance(expression, str) or not expression.strip():
+            return False, "expression 必须是非空字符串", None
+        if _hscript_escape(expression) is None:
+            return False, "表达式包含单引号，无法安全写入 Hscript 通道", None
+        if not isinstance(node_path, str) or not node_path.startswith("/"):
+            return False, "node_path 必须是绝对节点路径", None
+        if not isinstance(param_name, str) or not param_name.strip() or "/" in param_name:
+            return False, "param_name 必须是当前节点的单个参数名", None
+        try:
+            node = hou.node(node_path)
+            if node is None:
+                return False, f"未找到节点: {node_path}", None
+            parm = node.parm(param_name)
+            if parm is None:
+                return False, f"未找到单个参数: {param_name}；元组参数请指定分量", None
+            if parm.parmTemplate().type() not in (hou.parmTemplateType.Float, hou.parmTemplateType.Int):
+                return False, "仅支持单个 Float/Int 数值参数的表达式", None
+            keys = parm.keyframes()
+            if len(keys) > 1:
+                return False, "不覆盖多关键帧动画：现有撤销快照无法完整恢复它", None
+            if keys:
+                if abs(keys[0].time()) > 1e-9:
+                    return False, "不覆盖非零时间的动画关键帧", None
+                try:
+                    old_expr = parm.expression()
+                    old_lang = parm.expressionLanguage()
+                except Exception:
+                    return False, "不覆盖已有数值动画关键帧", None
+                if old_lang != hou.exprLanguage.Hscript:
+                    return False, "不覆盖 Python 表达式：暂不支持安全恢复", None
+                if _hscript_escape(old_expr) is None:
+                    return False, "旧表达式含单引号，无法保证安全撤销", None
+                old_value = {"expr": old_expr, "lang": "Hscript"}
+            else:
+                old_value = parm.eval()
+
+            new_value = {"expr": expression, "lang": "Hscript"}
+            if old_value == new_value:
+                return True, f"表达式未变化: {parm.path()}", None
+            ok, message = set_expression_safe(parm, expression)
+            if not ok:
+                # hscript 错误可能发生在通道已创建后；尝试恢复原状态。
+                try:
+                    if keys:
+                        restored, restore_message = set_expression_safe(parm, old_value["expr"])
+                        if not restored:
+                            raise RuntimeError(restore_message)
+                    else:
+                        parm.deleteAllKeyframes()
+                        parm.set(old_value)
+                except Exception as exc:
+                    message += f"；恢复旧值失败: {exc}"
+                return False, message, None
+            snapshot = {
+                "node_path": node.path(), "param_name": param_name,
+                "old_value": old_value, "new_value": new_value,
+                "is_tuple": False, "clear_keyframes": not bool(keys),
+            }
+            return True, message, snapshot
+        except Exception as exc:
+            return False, f"设置表达式失败: {exc}", None
 
     def batch_set_parameters(self, node_paths: List[str], param_name: str,
                              value: Any) -> Tuple[bool, str]:

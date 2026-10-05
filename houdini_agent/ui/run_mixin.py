@@ -374,7 +374,7 @@ class RunMixin:
         # 判断是否为修改操作（需要 undo group）
         _MUTATING_TOOLS = {
             "create_node", "create_nodes_batch", "create_wrangle_node",
-            "delete_node", "set_node_parameter", "connect_nodes",
+            "delete_node", "set_node_parameter", "set_parameter_expression", "connect_nodes",
             "copy_node", "batch_set_parameters", "set_display_flag",
             "execute_python", "save_hip", "run_skill",
         }
