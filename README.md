@@ -88,6 +88,7 @@ The entire front-end was rewritten in **QML/Qt Quick** (`houdini_agent/ui_qml/`)
 | `delete_node` | Delete a node by path |
 | `copy_node` | Copy/clone a node to the same or another network |
 | `set_node_parameter` | Set a single parameter value (with smart error hints, inline red/green diff preview, and one-click undo) |
+| `set_parameter_expression` | Set a numeric Hscript channel expression through safe channel commands, with an undo snapshot; Python expressions and animated channels are not supported |
 | `batch_set_parameters` | Set the same parameter across multiple nodes |
 | `set_display_flag` | Set display/render flags on a node |
 | `save_hip` | Save the current HIP file |

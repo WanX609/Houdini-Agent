@@ -88,6 +88,7 @@ AI 以自主 **Agent 循环** 运行：接收用户请求 → 规划步骤 → �
 | `delete_node` | 删除节点 |
 | `copy_node` | 复制/克隆节点到同一或其他网络 |
 | `set_node_parameter` | 设置单个参数值（智能纠错、内联红绿 Diff 预览、一键撤销） |
+| `set_parameter_expression` | 使用安全通道命令设置数值参数的 Hscript 表达式，提供撤销快照；暂不支持 Python 表达式及已有动画 |
 | `batch_set_parameters` | 批量设置多个节点的同一参数 |
 | `set_display_flag` | 设置节点的显示/渲染标志 |
 | `save_hip` | 保存当前 HIP 文件 |
