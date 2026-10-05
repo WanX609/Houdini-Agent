@@ -3,6 +3,10 @@ from __future__ import annotations
 import time
 from typing import Any, Optional, Dict, Tuple
 
+from houdini_agent.utils.safe_expr import (
+    SET_EXPRESSION_GUIDANCE, code_uses_set_expression, guard_enabled,
+)
+
 try:
     import hou  # type: ignore
 except Exception:
@@ -43,12 +47,16 @@ class ExecOpsMixin:
         超时或用户停止时抛出 _ExecInterrupt 中断代码执行，防止卡死主线程。
         注意：对 C 扩展内部的阻塞（如 hou.node.cook）无法中断，
         但能在 C 调用返回后的下一行 Python 代码处中断。
+        ★ setExpression 保护：默认拦截危险调用，指引使用专用表达式工具。
         """
         if hou is None:
             return False, {"error": "未检测到 Houdini API"}
 
         if not code or not code.strip():
             return False, {"error": "代码为空"}
+
+        if guard_enabled() and code_uses_set_expression(code):
+            return False, {"error": SET_EXPRESSION_GUIDANCE}
 
         import io
         import sys
